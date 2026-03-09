@@ -1,0 +1,14 @@
+aiofiles
+aiohttp
+cython
+fastapi
+minio
+pip
+prometheus-fastapi-instrumentator
+pydantic
+pyinstaller
+requests
+setuptools
+sqlalchemy
+starlette
+uvicorn

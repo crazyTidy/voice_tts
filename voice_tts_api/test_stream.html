@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>TTS 流式测试</title>
+    <meta charset="utf-8">
+</head>
+<body>
+    <h1>TTS 流式生成测试</h1>
+    <div>
+        <textarea id="text" rows="4" cols="50">你好，这是一段测试语音</textarea><br>
+        <input type="file" id="audio" accept="audio/*"><br>
+        <button onclick="generateStream()">生成语音（流式）</button>
+    </div>
+    <div id="status"></div>
+    <audio id="player" controls></audio>
+
+    <script>
+        async function generateStream() {
+            const text = document.getElementById('text').value;
+            const audioFile = document.getElementById('audio').files[0];
+            const status = document.getElementById('status');
+            
+            if (!audioFile) {
+                alert('请选择参考音频');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('text', text);
+            formData.append('prompt_text', '');
+            formData.append('prompt_audio', audioFile);
+
+            status.innerHTML = '生成中...';
+
+            const response = await fetch('http://localhost:8001/api/tts/generate/stream', {
+                method: 'POST',
+                body: formData
+            });
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+
+            while (true) {
+                const {done, value} = await reader.read();
+                if (done) break;
+
+                const text = decoder.decode(value);
+                const lines = text.split('\n');
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const data = JSON.parse(line.slice(6));
+                        
+                        if (data.type === 'chunk') {
+                            status.innerHTML += '.';
+                        } else if (data.type === 'final') {
+                            status.innerHTML = '完成！';
+                            document.getElementById('player').src = 
+                                'http://localhost:8001' + data.audio_url;
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>

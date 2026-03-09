@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>测试页面</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      margin: 0;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 16px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    }
+    h1 { color: #667eea; }
+    .success { color: #10b981; font-weight: bold; }
+    .error { color: #ef4444; font-weight: bold; }
+    .test-item {
+      padding: 10px;
+      margin: 10px 0;
+      border-left: 4px solid #667eea;
+      background: #f5f7fa;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🧪 前端诊断测试</h1>
+
+    <div class="test-item">
+      <span>✅ HTML 加载: </span>
+      <span class="success">正常</span>
+    </div>
+
+    <div class="test-item">
+      <span>📝 JavaScript 测试: </span>
+      <span id="js-test" class="success">运行中...</span>
+    </div>
+
+    <div class="test-item">
+      <span>🎨 CSS 样式: </span>
+      <span class="success">正常（如果你能看到彩色背景）</span>
+    </div>
+
+    <div class="test-item">
+      <h3>环境信息：</h3>
+      <ul>
+        <li>用户代理: <span id="ua"></span></li>
+        <li>页面 URL: <span id="url"></span></li>
+        <li>时间: <span id="time"></span></li>
+      </ul>
+    </div>
+
+    <div class="test-item">
+      <h3>API 连接测试：</h3>
+      <button onclick="testAPI()">测试后端 API</button>
+      <p id="api-result"></p>
+    </div>
+  </div>
+
+  <script>
+    // JavaScript 测试
+    document.getElementById('js-test').textContent = '正常';
+
+    // 环境信息
+    document.getElementById('ua').textContent = navigator.userAgent;
+    document.getElementById('url').textContent = window.location.href;
+    document.getElementById('time').textContent = new Date().toLocaleString('zh-CN');
+
+    // API 测试
+    async function testAPI() {
+      const result = document.getElementById('api-result');
+      result.textContent = '测试中...';
+
+      try {
+        const response = await fetch('http://localhost:8000/health');
+        const data = await response.json();
+        result.innerHTML = `<span class="success">✅ API 正常: ${JSON.stringify(data)}</span>`;
+      } catch (error) {
+        result.innerHTML = `<span class="error">❌ API 失败: ${error.message}</span>`;
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>录音功能调试</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #d97757 0%, #6a9bcc 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        }
+        h1 {
+            color: #141413;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        #startBtn { background: #d97757; color: white; }
+        #startBtn:hover:not(:disabled) { background: #c56a4a; }
+        #stopBtn { background: #c75d4d; color: white; }
+        #stopBtn:disabled { background: #ccc; cursor: not-allowed; }
+        #downloadBtn { background: #788c5d; color: white; }
+        #downloadBtn:disabled { background: #ccc; cursor: not-allowed; }
+        #testMicBtn { background: #6a9bcc; color: white; }
+        .status {
+            text-align: center;
+            margin: 20px 0;
+            font-size: 18px;
+            color: #141413;
+        }
+        .recording-time {
+            font-size: 32px;
+            font-weight: bold;
+            color: #d97757;
+            margin: 10px 0;
+        }
+        audio {
+            width: 100%;
+            margin: 20px 0;
+        }
+        .info {
+            background: #e8e6dc;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            font-size: 14px;
+        }
+        .info h3 { margin-top: 0; margin-bottom: 10px; }
+        .log-container {
+            background: #1a1a1a;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+        }
+        .log-entry { margin: 2px 0; }
+        .log-time { color: #888; }
+        .log-warn { color: #ffcc00; }
+        .log-error { color: #ff4444; }
+        .log-success { color: #44ff44; }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-label { font-size: 12px; color: #666; }
+        .stat-value { font-size: 24px; font-weight: bold; color: #d97757; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 录音功能调试工具</h1>
+
+        <div class="button-group">
+            <button id="testMicBtn">🔍 测试麦克风</button>
+            <button id="startBtn">🔴 开始录音</button>
+            <button id="stopBtn" disabled>⏹️ 停止录音</button>
+            <button id="downloadBtn" disabled>⬇️ 下载录音</button>
+            <button id="clearLogBtn">🗑️ 清空日志</button>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-label">录音时长</div>
+                <div class="stat-value" id="timerDisplay">00:00</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">数据块数</div>
+                <div class="stat-value" id="chunksDisplay">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">总大小</div>
+                <div class="stat-value" id="sizeDisplay">0 KB</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">格式</div>
+                <div class="stat-value" id="formatDisplay">-</div>
+            </div>
+        </div>
+
+        <div class="status">
+            <div>状态: <strong id="statusText">准备就绪</strong></div>
+        </div>
+
+        <audio id="audioPlayer" controls style="display:none;"></audio>
+
+        <div class="log-container" id="logContainer">
+            <div class="log-entry"><span class="log-time">[系统]</span> 日志已初始化</div>
+        </div>
+
+        <div class="info">
+            <h3>支持的音频格式</h3>
+            <div id="formatInfo">检测中...</div>
+        </div>
+
+        <div class="info">
+            <h3>使用说明</h3>
+            <ol>
+                <li>点击"测试麦克风"检查麦克风权限和状态</li>
+                <li>点击"开始录音"开始录制</li>
+                <li>说话测试几秒钟</li>
+                <li>点击"停止录音"结束录制</li>
+                <li>检查音频播放器和统计数据</li>
+                <li>查看日志了解详细过程</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        let mediaRecorder = null;
+        let recordedChunks = [];
+        let recordingTimer = null;
+        let recordingSeconds = 0;
+        let recordedBlob = null;
+        let audioStream = null;
+
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const testMicBtn = document.getElementById('testMicBtn');
+        const clearLogBtn = document.getElementById('clearLogBtn');
+        const statusText = document.getElementById('statusText');
+        const timerDisplay = document.getElementById('timerDisplay');
+        const chunksDisplay = document.getElementById('chunksDisplay');
+        const sizeDisplay = document.getElementById('sizeDisplay');
+        const formatDisplay = document.getElementById('formatDisplay');
+        const audioPlayer = document.getElementById('audioPlayer');
+        const logContainer = document.getElementById('logContainer');
+        const formatInfo = document.getElementById('formatInfo');
+
+        // 日志函数
+        function log(message, type = 'info') {
+            const time = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+
+            let className = '';
+            if (type === 'warn') className = 'log-warn';
+            else if (type === 'error') className = 'log-error';
+            else if (type === 'success') className = 'log-success';
+
+            entry.innerHTML = `<span class="log-time">[${time}]</span> <span class="${className}">${message}</span>`;
+            logContainer.appendChild(entry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+            console.log(`[${type.toUpperCase()}]`, message);
+        }
+
+        function updateStats() {
+            const totalSize = recordedChunks.reduce((sum, chunk) => sum + chunk.size, 0);
+            chunksDisplay.textContent = recordedChunks.length;
+            sizeDisplay.textContent = (totalSize / 1024).toFixed(2) + ' KB';
+        }
+
+        // 格式检测
+        function detectSupportedFormats() {
+            const formats = [
+                { mime: 'audio/webm;codecs=opus', name: 'WebM (Opus)' },
+                { mime: 'audio/webm', name: 'WebM' },
+                { mime: 'audio/mp4', name: 'MP4/M4A' },
+                { mime: 'audio/ogg;codecs=opus', name: 'Ogg (Opus)' },
+                { mime: 'audio/wav', name: 'WAV' }
+            ];
+
+            let supported = [];
+            formats.forEach(format => {
+                if (MediaRecorder.isTypeSupported(format.mime)) {
+                    supported.push(format.name);
+                    log(`支持格式: ${format.name} (${format.mime})`, 'success');
+                }
+            });
+
+            formatInfo.innerHTML = `浏览器支持的格式: <strong>${supported.join(', ') || '未检测到标准格式'}</strong>`;
+            return supported;
+        }
+
+        detectSupportedFormats();
+        log('浏览器格式检测完成');
+
+        // 测试麦克风
+        testMicBtn.addEventListener('click', async () => {
+            try {
+                log('正在请求麦克风权限...', 'info');
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                log('麦克风权限已获取!', 'success');
+
+                // 获取音频设备信息
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const audioInputs = devices.filter(d => d.kind === 'audioinput');
+                log(`找到 ${audioInputs.length} 个音频输入设备:`, 'info');
+                audioInputs.forEach((device, i) => {
+                    log(`  ${i + 1}. ${device.label || '未命名设备'}`, 'info');
+                });
+
+                // 检查音频轨道
+                const audioTracks = stream.getAudioTracks();
+                if (audioTracks.length > 0) {
+                    const track = audioTracks[0];
+                    log(`音频轨道: ${track.label}`, 'success');
+                    log(`轨道状态: ${track.readyState}`, 'info');
+                    log(`轨道ID: ${track.id}`, 'info');
+                }
+
+                // 停止测试流
+                stream.getTracks().forEach(track => track.stop());
+                log('测试完成，测试流已停止', 'info');
+
+            } catch (error) {
+                log(`麦克风测试失败: ${error.message}`, 'error');
+                console.error('麦克风测试错误:', error);
+            }
+        });
+
+        // 开始录音
+        startBtn.addEventListener('click', async () => {
+            try {
+                log('========== 开始录音流程 ==========', 'info');
+                recordedChunks = [];
+                updateStats();
+
+                log('正在请求音频流...', 'info');
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioStream = stream;
+                log('音频流获取成功!', 'success');
+
+                // 检测最佳格式
+                let mimeType = '';
+                let fileExtension = 'webm';
+
+                const preferredTypes = [
+                    'audio/webm;codecs=opus',
+                    'audio/webm',
+                    'audio/mp4',
+                    'audio/ogg;codecs=opus'
+                ];
+
+                for (const type of preferredTypes) {
+                    if (MediaRecorder.isTypeSupported(type)) {
+                        mimeType = type;
+                        if (type.includes('mp4')) fileExtension = 'mp4';
+                        else if (type.includes('ogg')) fileExtension = 'ogg';
+                        break;
+                    }
+                }
+
+                formatDisplay.textContent = fileExtension.toUpperCase();
+                log(`使用 MIME 类型: ${mimeType || '默认'}`, 'info');
+
+                // 创建 MediaRecorder
+                const options = mimeType ? { mimeType } : undefined;
+                mediaRecorder = new MediaRecorder(stream, options);
+                log(`MediaRecorder 创建成功, 实际类型: ${mediaRecorder.mimeType}`, 'success');
+
+                // 绑定事件（必须在 start 之前）
+                mediaRecorder.ondataavailable = (event) => {
+                    log(`ondataavailable 触发, 数据大小: ${event.data?.size} bytes`, 'info');
+
+                    if (event.data && event.data.size > 0) {
+                        recordedChunks.push(event.data);
+                        log(`数据块已添加, 当前总数: ${recordedChunks.length}`, 'success');
+                        updateStats();
+                    } else {
+                        log('收到空数据块', 'warn');
+                    }
+                };
+
+                mediaRecorder.onstop = () => {
+                    log('========== onstop 触发 ==========', 'info');
+                    log(`总数据块数: ${recordedChunks.length}`, 'info');
+
+                    const totalSize = recordedChunks.reduce((sum, chunk) => sum + chunk.size, 0);
+                    log(`总数据大小: ${totalSize} bytes (${(totalSize / 1024).toFixed(2)} KB)`, 'info');
+
+                    if (recordedChunks.length === 0 || totalSize === 0) {
+                        log('错误: 没有录制到任何数据!', 'error');
+                        alert('录音失败: 没有录制到数据');
+                        return;
+                    }
+
+                    // 创建 Blob
+                    const actualMimeType = mediaRecorder.mimeType || 'audio/webm';
+                    recordedBlob = new Blob(recordedChunks, { type: actualMimeType });
+                    log(`Blob 创建成功, 大小: ${recordedBlob.size} bytes`, 'success');
+
+                    // 创建音频 URL
+                    const audioURL = URL.createObjectURL(recordedBlob);
+                    audioPlayer.src = audioURL;
+                    audioPlayer.style.display = 'block';
+                    log(`音频播放器已设置, URL: ${audioURL}`, 'success');
+
+                    // 启用下载按钮
+                    downloadBtn.disabled = false;
+
+                    // 停止音频轨道
+                    stream.getTracks().forEach(track => {
+                        log(`停止轨道: ${track.label}`, 'info');
+                        track.stop();
+                    });
+
+                    log('录音流程完成', 'success');
+                };
+
+                mediaRecorder.onerror = (event) => {
+                    log(`MediaRecorder 错误: ${event.error}`, 'error');
+                    console.error('MediaRecorder error:', event);
+                };
+
+                // 开始录制（不使用 timeslice）
+                mediaRecorder.start();
+                log('MediaRecorder.start() 已调用', 'success');
+
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                statusText.textContent = '录音中...';
+                statusText.style.color = '#d97757';
+
+                recordingSeconds = 0;
+                timerDisplay.textContent = '00:00';
+
+                recordingTimer = setInterval(() => {
+                    recordingSeconds++;
+                    const mins = Math.floor(recordingSeconds / 60).toString().padStart(2, '0');
+                    const secs = (recordingSeconds % 60).toString().padStart(2, '0');
+                    timerDisplay.textContent = `${mins}:${secs}`;
+
+                    // 每5秒请求一次数据
+                    if (recordingSeconds % 5 === 0 && mediaRecorder.state === 'recording') {
+                        log(`请求分段数据 (录制 ${recordingSeconds}s)`, 'info');
+                        mediaRecorder.requestData();
+                    }
+                }, 1000);
+
+                log('计时器已启动', 'info');
+
+            } catch (error) {
+                log(`录音启动失败: ${error.message}`, 'error');
+                console.error('录音错误:', error);
+                alert(`无法访问麦克风: ${error.message}`);
+            }
+        });
+
+        // 停止录音
+        stopBtn.addEventListener('click', () => {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                log('准备停止录音...', 'info');
+
+                // 请求最后的数据
+                mediaRecorder.requestData();
+                log('已请求最后的数据段', 'info');
+
+                // 停止录制
+                mediaRecorder.stop();
+                log('MediaRecorder.stop() 已调用', 'info');
+
+                // 清理计时器
+                clearInterval(recordingTimer);
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+                statusText.textContent = '录音完成';
+                statusText.style.color = '#788c5d';
+            }
+        });
+
+        // 下载录音
+        downloadBtn.addEventListener('click', () => {
+            if (recordedBlob) {
+                const url = URL.createObjectURL(recordedBlob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `recording_${Date.now()}.webm`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                log(`文件已下载: recording_${Date.now()}.webm`, 'success');
+            }
+        });
+
+        // 清空日志
+        clearLogBtn.addEventListener('click', () => {
+            logContainer.innerHTML = '<div class="log-entry"><span class="log-time">[系统]</span> 日志已清空</div>';
+            log('日志已清空', 'info');
+        });
+
+        // 检查权限状态
+        if (navigator.permissions) {
+            navigator.permissions.query({ name: 'microphone' })
+                .then(result => {
+                    log(`麦克风权限状态: ${result.state}`, 'info');
+                    result.onchange = () => {
+                        log(`麦克风权限状态变更: ${result.state}`, 'warn');
+                    };
+                })
+                .catch(err => {
+                    log(`无法检查麦克风权限: ${err.message}`, 'warn');
+                });
+        }
+
+        log('页面初始化完成, 准备就绪', 'success');
+    </script>
+</body>
+</html>
